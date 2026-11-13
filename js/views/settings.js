@@ -12,7 +12,7 @@ import { exportExcel, parseExcel, applyImport } from '../excel.js';
 import { refreshRates, setManualRates } from '../rates.js';
 import { openPinSetup } from './lock.js';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 /* ------------------------------ Yedekleme ------------------------------ */
 
@@ -60,13 +60,14 @@ function currentDataSummary() {
   const parts = [];
   if (S.tx.length) parts.push(`${S.tx.length} kasa kaydı`);
   if (S.debts.length) parts.push(`${S.debts.length} borç/alacak`);
+  if (S.firms.length) parts.push(`${S.firms.length} cari firma`);
   if (S.cari.length) parts.push(`${S.cari.length} cari hareket`);
   if (S.payments.length) parts.push(`${S.payments.length} yaklaşan ödeme`);
   return parts.join(', ');
 }
 
 function ImportPreview({ parsed, fileName }) {
-  const has = S.tx.length + S.debts.length + S.cari.length + S.payments.length > 0;
+  const has = S.tx.length + S.debts.length + S.cari.length + S.firms.length + S.payments.length > 0;
   const [mode, setMode] = useState('replace');
   const [busy, setBusy] = useState(false);
   const s = parsed.stats;
@@ -305,7 +306,7 @@ export function Settings() {
     const v = await ask({ title: 'Tüm veriler silinsin mi?', text: 'Bu işlem geri alınamaz. Devam etmek için kutuya SİL yazın.', input: '', ok: 'Tümünü sil', danger: true });
     if (v === false) return;
     if (upper(v) !== 'SİL') return toast('SİL yazılmadığı için silinmedi', 'err');
-    replaceAll({ tx: [], cari: [], payments: [], debts: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS] });
+    replaceAll({ tx: [], cari: [], firms: [], payments: [], debts: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS] });
     toast('Tüm veriler silindi');
   };
 

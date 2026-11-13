@@ -1,9 +1,10 @@
 // Excel içe/dışa aktarma. Babamın "GENEL İCMAL" formatıyla birebir uyumludur.
 import { S, commit } from './store.js';
-import { CURS, upper, uid, round2, todayStr, downloadBlob } from './util.js';
+import { CURS, upper, uid, round2, todayStr, downloadBlob, daysBetween } from './util.js';
 import {
   T, DEFAULT_TYPES, DEFAULT_COUNTERS, NON_REPORT_NAMES, ACCOUNT_KINDS,
   emptyAmt, addAmt, roundAmt, amtCurs, balances, guessKind,
+  people, getFirm, firmLedger, cariOpen,
 } from './model.js';
 import { debtStatus } from './debts.js';
 
@@ -206,6 +207,19 @@ export async function buildWorkbook({ year } = {}) {
     const pw = wb.addWorksheet('_PLANLAR', { state: 'hidden' });
     pw.getCell('A1').value = 'PLAN (JSON)';
     S.debts.forEach((d, i) => (pw.getCell(i + 2, 1).value = JSON.stringify(d)));
+    // Cari firma bilgileri ve satırların fiş türü / vade / durum bilgileri
+    const cw = wb.addWorksheet('_CARİ_EK', { state: 'hidden' });
+    cw.getCell('A1').value = 'TÜR';
+    cw.getCell('B1').value = 'KAYIT NO';
+    cw.getCell('C1').value = 'BİLGİ (JSON)';
+    let r = 2;
+    for (const f of S.firms) { cw.getCell(r, 1).value = 'FİRMA'; cw.getCell(r++, 3).value = JSON.stringify(f); }
+    for (const c of S.cari) {
+      if (!c.fis && !c.due && !c.status && !c.paidOn) continue;
+      cw.getCell(r, 1).value = 'SATIR';
+      cw.getCell(r, 2).value = c.id;
+      cw.getCell(r++, 3).value = JSON.stringify({ fis: c.fis || '', due: c.due || '', status: c.status || '', paidOn: c.paidOn || '' });
+    }
   }
 
   const bal = balances();
@@ -233,11 +247,220 @@ export async function buildWorkbook({ year } = {}) {
   return wb;
 }
 
+/* -------------------- Cariler (babamın "Cariler" Excel düzeni) -------------------- */
+
+const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const THIN = { style: 'thin', color: { argb: 'FFBFCBC7' } };
+const BOX = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+
+function sheetName(n, used) {
+  const base = (n.replace(/[[\]*?/\\:']/g, ' ').replace(/\s+/g, ' ').trim() || 'FİRMA').slice(0, 31);
+  let s = base, k = 2;
+  while (used.has(upper(s))) { const suf = ` (${k++})`; s = base.slice(0, 31 - suf.length) + suf; }
+  used.add(upper(s));
+  return s;
+}
+const q = (s) => `'${s.replace(/'/g, "''")}'`;
+
+function headerRow(ws, r, values) {
+  const row = ws.getRow(r);
+  values.forEach((h, i) => {
+    const c = row.getCell(i + 1);
+    c.value = h;
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = HEADER_FILL;
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    c.border = BOX;
+  });
+  row.height = 28;
+}
+
+/** Tek firmanın sayfası. Döner: para birimi başına bakiye hücresi. */
+function writeFirmSheet(ws, name, backLink) {
+  const firm = getFirm(name);
+  const today = todayStr();
+  let blocks = firmLedger(name);
+  if (!blocks.length) blocks = [{ cur: firm.cur, rows: [], borc: 0, alacak: 0, bal: 0 }];
+  ws.mergeCells(1, 1, 1, 8);
+  const t = ws.getCell(1, 1);
+  t.value = name;
+  t.font = TITLE_FONT;
+  ws.getRow(1).height = 24;
+  ws.getCell(1, 9).value = firm.group === 'borc' ? 'BORÇ CARİLER' : 'ALACAK CARİLER';
+  ws.getCell(1, 9).font = { bold: true };
+  if (backLink) {
+    ws.getCell(1, 10).value = { text: 'ANA SAYFA', hyperlink: "#'ANA SAYFA'!A1" };
+    ws.getCell(1, 10).font = { color: { argb: 'FF1D4A7A' }, underline: true };
+  }
+  const out = [];
+  let r = 2;
+  for (const b of blocks) {
+    const lbl = CUR_COLS.find(([c]) => c === b.cur)[1];
+    headerRow(ws, r, ['TARİH', 'FİŞ TÜRÜ', 'AÇIKLAMA', `BORÇ ${lbl}`, `ALACAK ${lbl}`, `BAKİYE ${lbl}`, 'ÖDEME VADE', 'ÖDENEN TARİH', 'KALAN SÜRE (GÜN)', 'DURUM']);
+    const first = r + 1;
+    b.rows.forEach(({ r: c, borc, alacak, bal }, i) => {
+      const n = first + i;
+      const row = ws.getRow(n);
+      row.getCell(1).value = xDate(c.date);
+      row.getCell(2).value = c.fis || null;
+      row.getCell(3).value = c.desc || null;
+      if (borc) row.getCell(4).value = borc;
+      if (alacak) row.getCell(5).value = alacak;
+      row.getCell(6).value = { formula: n === first ? `E${n}-D${n}` : `F${n - 1}+E${n}-D${n}`, result: bal };
+      if (c.due) row.getCell(7).value = xDate(c.due);
+      if (c.paidOn) row.getCell(8).value = xDate(c.paidOn);
+      if (cariOpen(c)) row.getCell(9).value = { formula: `G${n}-TODAY()`, result: daysBetween(today, c.due) };
+      row.getCell(10).value = c.status || (c.due ? 'ÖDENMEDİ' : null);
+      [1, 7, 8].forEach((k) => (row.getCell(k).numFmt = 'dd.mm.yyyy'));
+      [4, 5, 6].forEach((k) => (row.getCell(k).numFmt = NUM_FMT));
+      row.getCell(9).numFmt = '0;[Red]-0';
+      for (let k = 1; k <= 10; k++) row.getCell(k).border = BOX;
+      row.getCell(10).font = { bold: true, color: { argb: c.status === 'ÖDENDİ' || c.status === 'MAHSUP' ? 'FF0F7B3F' : 'FFC0392B' } };
+    });
+    const last = Math.max(first, first + b.rows.length - 1);
+    const tr = b.rows.length ? first + b.rows.length : first;
+    const row = ws.getRow(tr);
+    row.getCell(3).value = 'TOPLAM';
+    row.getCell(4).value = { formula: b.rows.length ? `SUM(D${first}:D${last})` : '0', result: b.borc };
+    row.getCell(5).value = { formula: b.rows.length ? `SUM(E${first}:E${last})` : '0', result: b.alacak };
+    row.getCell(6).value = { formula: `E${tr}-D${tr}`, result: b.bal };
+    row.getCell(7).value = b.bal > 0.004 ? 'BİZE BORÇLU' : b.bal < -0.004 ? 'BİZ BORÇLUYUZ' : 'KAPANDI';
+    for (let k = 1; k <= 10; k++) {
+      const c = row.getCell(k);
+      c.font = { bold: true };
+      c.border = { top: { style: 'medium', color: { argb: 'FF0F6E5F' } } };
+      if (k >= 4 && k <= 6) c.numFmt = NUM_FMT;
+    }
+    out.push({ cur: b.cur, ref: `${q(ws.name)}!F${tr}`, bal: b.bal });
+    r = tr + 2;
+  }
+  if (blocks.length === 1) ws.views = [{ state: 'frozen', ySplit: 2 }];
+  [12, 12, 46, 16, 16, 16, 13, 13, 12, 12].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  return out;
+}
+
+/** names verilirse sadece o firmalar; verilmezse tüm cariler (ANA SAYFA + listeler + firma sayfaları). */
+export async function buildCariWorkbook(names) {
+  const ExcelJS = await loadExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Kişisel Muhasebe';
+  wb.created = new Date();
+  wb.calcProperties.fullCalcOnLoad = true; // açılınca formüller (KALAN SÜRE, toplamlar) yeniden hesaplansın
+  const all = !names;
+  const list = (names || people()).map((n) => ({ name: n, firm: getFirm(n) }));
+  const used = new Set();
+  if (!all) {
+    for (const { name } of list) writeFirmSheet(wb.addWorksheet(sheetName(name, used)), name, false);
+    return wb;
+  }
+  ['ANA SAYFA', 'ALACAK CARİLER', 'BORÇ CARİLER'].forEach((n) => used.add(upper(n)));
+  const main = wb.addWorksheet('ANA SAYFA');
+  const groups = [['alacak', wb.addWorksheet('ALACAK CARİLER')], ['borc', wb.addWorksheet('BORÇ CARİLER')]];
+  const sorted = [...list].sort((a, b) => (a.firm.group === b.firm.group ? a.name.localeCompare(b.name, 'tr') : a.firm.group === 'alacak' ? -1 : 1));
+  const refs = new Map();
+  for (const { name } of sorted) {
+    const ws = wb.addWorksheet(sheetName(name, used));
+    refs.set(name, { sheet: ws.name, cells: writeFirmSheet(ws, name, true) });
+  }
+
+  const usedCurs = new Set();
+  for (const [g, ws] of groups) {
+    const title = g === 'alacak' ? 'ALACAK CARİLER' : 'BORÇ CARİLER';
+    ws.getCell(1, 1).value = title;
+    ws.getCell(1, 1).font = TITLE_FONT;
+    ws.getCell(1, 7).value = { text: 'ANA SAYFA', hyperlink: "#'ANA SAYFA'!A1" };
+    ws.getCell(1, 7).font = { color: { argb: 'FF1D4A7A' }, underline: true };
+    headerRow(ws, 2, ['FİRMA', 'TOPLAM', 'PARA BİRİMİ', 'AÇIKLAMA', 'DURUM', 'NOT']);
+    let r = 3;
+    for (const { name, firm } of sorted.filter((x) => x.firm.group === g)) {
+      const { sheet, cells } = refs.get(name);
+      const closed = cells.every((c) => Math.abs(c.bal) < 0.005);
+      for (const c of cells) {
+        usedCurs.add(c.cur);
+        const row = ws.getRow(r++);
+        row.getCell(1).value = { text: name, hyperlink: `#${q(sheet)}!A1` };
+        row.getCell(1).font = { bold: true, color: { argb: 'FF1D4A7A' }, underline: true };
+        row.getCell(2).value = { formula: c.ref, result: c.bal };
+        row.getCell(2).numFmt = NUM_FMT;
+        row.getCell(3).value = CUR_COLS.find(([k]) => k === c.cur)[1];
+        row.getCell(4).value = firm.risk || 'NORMAL';
+        row.getCell(5).value = closed ? 'ÖDENDİ' : 'ÖDENMEDİ';
+        row.getCell(5).font = { bold: true, color: { argb: closed ? 'FF0F7B3F' : 'FFC0392B' } };
+        row.getCell(6).value = firm.note || null;
+        for (let k = 1; k <= 6; k++) row.getCell(k).border = BOX;
+      }
+    }
+    [30, 18, 12, 14, 12, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+    ws.views = [{ state: 'frozen', ySplit: 2 }];
+  }
+
+  // ANA SAYFA: grup toplamları (para birimine göre)
+  const curs = CUR_COLS.filter(([c]) => usedCurs.has(c));
+  if (!curs.length) curs.push(CUR_COLS[0]);
+  main.getCell(1, 1).value = 'CARİLER ÖZETİ';
+  main.getCell(1, 1).font = TITLE_FONT;
+  main.getCell(1, 3).value = `Tarih: ${todayStr().split('-').reverse().join('.')}`;
+  headerRow(main, 2, ['', ...curs.map(([, l]) => `TOPLAM ${l}`)]);
+  const sums = { alacak: emptyAmt(), borc: emptyAmt() };
+  for (const { name, firm } of list) for (const c of refs.get(name).cells) sums[firm.group][c.cur] = round2(sums[firm.group][c.cur] + c.bal);
+  [['ALACAK CARİLER', 'alacak'], ['BORÇ CARİLER', 'borc']].forEach(([title, g], i) => {
+    const row = main.getRow(3 + i);
+    row.getCell(1).value = { text: title, hyperlink: `#${q(title)}!A1` };
+    row.getCell(1).font = { bold: true, color: { argb: 'FF1D4A7A' }, underline: true };
+    curs.forEach(([cur, l], k) => {
+      const c = row.getCell(2 + k);
+      c.value = { formula: `SUMIF(${q(title)}!C:C,"${l}",${q(title)}!B:B)`, result: sums[g][cur] };
+      c.numFmt = NUM_FMT;
+    });
+  });
+  const tr = main.getRow(5);
+  tr.getCell(1).value = 'TOPLAM';
+  tr.getCell(1).font = { bold: true };
+  curs.forEach(([cur], k) => {
+    const L = colLetter(2 + k);
+    const c = tr.getCell(2 + k);
+    c.value = { formula: `${L}3+${L}4`, result: round2(sums.alacak[cur] + sums.borc[cur]) };
+    c.numFmt = NUM_FMT;
+    c.font = { bold: true };
+  });
+  for (let r = 3; r <= 5; r++) for (let k = 1; k <= curs.length + 1; k++) main.getRow(r).getCell(k).border = BOX;
+  main.getCell(7, 1).value = 'Artı tutar: firma bize borçlu (alacaklıyız). Eksi tutar: biz borçluyuz.';
+  main.getCell(7, 1).font = { italic: true, color: { argb: 'FF5B6B66' } };
+  [24, 18, 18, 18, 18].forEach((w, i) => (main.getColumn(i + 1).width = w));
+  return wb;
+}
+
+export async function exportCari(names, { share = false } = {}) {
+  const wb = await buildCariWorkbook(names);
+  const safe = (s) => s.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '');
+  const name = names?.length === 1 ? `Cari_${safe(names[0])}_${todayStr()}.xlsx` : `Cariler_${todayStr()}.xlsx`;
+  return saveWorkbook(wb, name, share);
+}
+
+async function saveWorkbook(wb, name, share) {
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: xlsxType });
+  if (share) {
+    const file = new File([blob], name, { type: blob.type });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: name });
+        return { name, shared: true };
+      } catch (e) {
+        if (e.name === 'AbortError') return { cancelled: true };
+        throw e;
+      }
+    }
+  }
+  downloadBlob(blob, name);
+  return { name, shared: false };
+}
+
 export async function exportExcel({ year, share = false } = {}) {
   const wb = await buildWorkbook({ year });
   const buf = await wb.xlsx.writeBuffer();
   const name = year ? `Genel_Kasa_${year}.xlsx` : `Muhasebe_Yedek_${todayStr()}.xlsx`;
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const blob = new Blob([buf], { type: xlsxType });
   let shared = false;
   if (share) {
     const file = new File([blob], name, { type: blob.type });
@@ -428,6 +651,7 @@ export async function parseExcel(arrayBuffer) {
   let main = null, cari = null, payments = null, skipped = 0;
   for (const ws of wb.worksheets) {
     const name = upper(ws.name);
+    if (ws.name.startsWith('_')) continue; // gizli yardımcı sayfalar aşağıda okunur
     if (name.includes('CARİ') || name.includes('CARI')) {
       const r = readLedger(ws);
       if (r) { cari = (cari || []).concat(r.rows); skipped += r.skipped; }
@@ -518,6 +742,22 @@ export async function parseExcel(arrayBuffer) {
     }
   }
 
+  // Cari firma bilgileri ve satır ekleri (sadece uygulama yedeğinde bulunur)
+  const firms = [];
+  const extras = new Map();
+  const cxWs = wb.worksheets.find((w) => w.name === '_CARİ_EK');
+  if (cxWs) {
+    for (let r = 2; r <= cxWs.rowCount; r++) {
+      const kind = cellVal(cxWs.getCell(r, 1));
+      try {
+        const v = JSON.parse(cellVal(cxWs.getCell(r, 3)) || 'null');
+        if (!v) continue;
+        if (kind === 'FİRMA' && v.name) firms.push(v);
+        else if (kind === 'SATIR') extras.set(String(cellVal(cxWs.getCell(r, 2))), v);
+      } catch { /* bozuk satır atlanır */ }
+    }
+  }
+
   const dates = tx.map((t) => t.date);
   return {
     isBackup,
@@ -527,7 +767,8 @@ export async function parseExcel(arrayBuffer) {
       types: [...types.values()],
       counters: [...counters],
       payments: payments || [],
-      cari: (cari || []).map((c) => ({ ...flipAmt(c), link: null })),
+      cari: (cari || []).map((c) => ({ ...flipAmt(c), link: null, fis: '', due: '', status: '', paidOn: '', ...(extras.get(c.id) || {}) })),
+      firms,
       debts,
     },
     settings,
@@ -555,6 +796,7 @@ export function applyImport(parsed, mode) {
     S.counters = d.counters;
     S.payments = d.payments;
     S.cari = d.cari;
+    S.firms = d.firms || [];
     S.debts = d.debts || [];
   } else {
     // Sonuna eklerken kimlik çakışması olmasın: yeni kimlik ver, borç ödemelerindeki bağları da güncelle.
@@ -575,7 +817,9 @@ export function applyImport(parsed, mode) {
     for (const t of d.types) if (!S.types.some((x) => x.name === t.name)) S.types.push(t);
     S.counters = [...new Set([...S.counters, ...d.counters])];
     S.payments = [...S.payments, ...d.payments];
+    for (const c of d.cari) c.id = uid() + Math.random().toString(36).slice(2, 5);
     S.cari = [...S.cari, ...d.cari].sort((a, b) => a.date.localeCompare(b.date));
+    for (const f of d.firms || []) if (!S.firms.some((x) => x.name === f.name)) S.firms.push(f);
   }
   const patch = { lastBackup: new Date().toISOString() };
   if (parsed.settings) {

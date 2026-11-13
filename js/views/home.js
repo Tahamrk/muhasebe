@@ -2,7 +2,8 @@
 import { html, useMemo } from '../../vendor/preact-htm.js';
 import { S, setSetting, getSaveError } from '../store.js';
 import { CURS, CUR_LABEL, money, numRate, todayStr, daysBetween, periodRange, longDate, fmtDate } from '../util.js';
-import { accountSummary, flowRows, sumFlow, toDisplay, hasRates, amtCurs, ACCOUNT_KINDS } from '../model.js';
+import { accountSummary, flowRows, sumFlow, toDisplay, hasRates, amtCurs, ACCOUNT_KINDS, cariDue } from '../model.js';
+import { openFirm } from './cari.js';
 import { Icon, Money, Seg, Empty } from '../components.js';
 import { openEntry } from './entryForm.js';
 import { TxRow } from './entries.js';
@@ -71,6 +72,15 @@ export function Home() {
       sub: `${fmtDate(r.due)} · ${d.title} · ${r.no}. taksit · ${d.kind === 'borc' ? 'Ödenecek' : 'Tahsil edilecek'}`,
       open: () => openDebt(d.id),
     })),
+    ...cariDue(10, today).map((c) => {
+      const cur = amtCurs(c.amt)[0] || 'TRY';
+      const kind = c.amt[cur] < 0 ? 'alacak' : 'borc';
+      return {
+        key: c.id, name: c.counter, due: c.due, amount: Math.abs(c.amt[cur]), cur, kind,
+        sub: `${fmtDate(c.due)} · Cari${c.fis ? ' · ' + c.fis : ''} · ${c.desc}`,
+        open: () => openFirm(c.counter),
+      };
+    }),
   ].sort((a, b) => a.due.localeCompare(b.due));
   const lastBackupDays = S.settings.lastBackup ? daysBetween(S.settings.lastBackup.slice(0, 10), today) : null;
   const needBackup = S.tx.length > 0 && (lastBackupDays === null || lastBackupDays >= 30);
@@ -129,7 +139,7 @@ export function Home() {
 
     ${payments.length > 0 && html`<section>
       <h3 class="sec-title"><${Icon} name="bell" /> Yaklaşan ödeme ve tahsilatlar (10 gün)
-        <button class="link" onClick=${() => go('odemeler')}>Ödemeler</button><button class="link" style="margin-left:0" onClick=${() => go('borclar')}>Borç / Alacak</button></h3>
+        <button class="link" onClick=${() => go('odemeler')}>Ödemeler</button><button class="link" style="margin-left:0" onClick=${() => go('borclar')}>Borç / Alacak</button><button class="link" style="margin-left:0" onClick=${() => go('cari')}>Cariler</button></h3>
       <div class="card list">${payments.map((p) => {
         const d = daysBetween(today, p.due);
         return html`<button class="pay-row" key=${p.key} onClick=${p.open}>

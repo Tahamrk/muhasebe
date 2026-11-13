@@ -12,6 +12,7 @@ import { Payments } from './views/payments.js';
 import { Cari } from './views/cari.js';
 import { Debts } from './views/debts.js';
 import { upcomingInstallments } from './debts.js';
+import { cariDue } from './model.js';
 import { Reports } from './views/reports.js';
 import { Settings } from './views/settings.js';
 import { LockScreen } from './views/lock.js';
@@ -21,7 +22,7 @@ const NAV = [
   ['kayitlar', 'Kayıtlar', 'list', Entries],
   ['odemeler', 'Ödemeler', 'calendar', Payments],
   ['borclar', 'Borç / Alacak', 'file', Debts],
-  ['cari', 'Cari', 'users', Cari],
+  ['cari', 'Cariler', 'users', Cari],
   ['raporlar', 'Raporlar', 'chart', Reports],
   ['ayarlar', 'Ayarlar', 'settings', Settings],
 ];
@@ -115,7 +116,7 @@ function App() {
   const today = todayStr();
   const dueSoon = S.payments.filter((p) => !p.paid && p.due && daysBetween(today, p.due) <= 3).length;
   const debtSoon = upcomingInstallments(3).length;
-  const badges = { odemeler: dueSoon, borclar: debtSoon };
+  const badges = { odemeler: dueSoon, borclar: debtSoon, cari: cariDue(3, today).length };
   const current = NAV.find((n) => n[0] === route) || NAV[0];
   const Page = current[3];
   const nav = (cls) => html`<nav class=${cls}>

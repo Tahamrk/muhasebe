@@ -1,6 +1,6 @@
 // Uygulamayı internetsiz çalıştırmak için dosyaları önbelleğe alır.
 // Yeni sürüm yayınlarken VERSION değerini artırın.
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const CACHE = 'muhasebe-' + VERSION;
 const FILES = [
   './',

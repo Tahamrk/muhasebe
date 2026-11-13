@@ -1,6 +1,6 @@
 // İş kuralları: bakiyeler, raporlar, kayıt ekleme/silme, liste yönetimi.
 import { S, commit } from './store.js';
-import { CURS, round2, upper, uid, inRange, todayStr, addMonths } from './util.js';
+import { CURS, round2, upper, uid, inRange, todayStr, addMonths, addDays } from './util.js';
 
 export const T = {
   DEVREDEN: 'DEVREDEN',
@@ -271,7 +271,78 @@ export function deleteTx(t) {
 /* ---------------- Cari ---------------- */
 
 export function people() {
-  return [...new Set(S.cari.map((c) => c.counter))].sort((a, b) => a.localeCompare(b, 'tr'));
+  return [...new Set([...S.firms.map((f) => f.name), ...S.cari.map((c) => c.counter)])].sort((a, b) => a.localeCompare(b, 'tr'));
+}
+
+/* Cari firma bilgisi. group: 'alacak' (bize borçlu) | 'borc' (biz borçluyuz) */
+export const RISKS = ['NORMAL', 'SIKINTILI'];
+export const FIS_TYPES = ['FATURA', 'TAHSİLAT', 'ÖDEME', 'DEVİR', 'MAHSUP', 'ÇEK', 'SENET', 'İADE'];
+export const ROW_STATUS = ['ÖDENMEDİ', 'ÖDENDİ', 'MAHSUP'];
+
+export function getFirm(name, bal) {
+  const f = S.firms.find((x) => x.name === name);
+  if (f) return f;
+  // Bilgisi girilmemiş eski kişiler: bakiyesine ve kullandığı para birimine göre tahmin.
+  const rows = S.cari.filter((c) => c.counter === name);
+  const b = bal || rows.reduce((a, c) => addAmt(a, c.amt), emptyAmt());
+  const cur = amtCurs(b)[0] || CURS.find((c) => rows.some((r) => r.amt[c])) || 'TRY';
+  return { name, group: (b[cur] || 0) > 0 ? 'borc' : 'alacak', cur, risk: 'NORMAL', note: '', guessed: true };
+}
+
+export function saveFirm(f, oldName) {
+  const row = { name: upper(f.name), group: f.group === 'borc' ? 'borc' : 'alacak', cur: f.cur || 'TRY', risk: upper(f.risk) || 'NORMAL', note: f.note || '' };
+  if (oldName && oldName !== row.name) {
+    if (S.firms.some((x) => x.name === row.name)) throw new Error('Bu isimde bir firma zaten var');
+    for (const c of S.cari) if (c.counter === oldName) c.counter = row.name;
+    S.firms = S.firms.filter((x) => x.name !== oldName);
+  }
+  const i = S.firms.findIndex((x) => x.name === row.name);
+  if (i >= 0) S.firms[i] = row; else S.firms.push(row);
+  commit('firms', 'cari');
+  return row;
+}
+
+export function deleteFirm(name) {
+  const linked = new Set(S.cari.filter((c) => c.counter === name && c.link).map((c) => c.link));
+  S.tx = S.tx.filter((t) => !linked.has(t.id));
+  S.cari = S.cari.filter((c) => c.counter !== name);
+  S.firms = S.firms.filter((x) => x.name !== name);
+  commit('tx', 'cari', 'firms');
+}
+
+/**
+ * Firmanın defteri, babamın Excel'indeki gibi: BORÇ / ALACAK / BAKİYE (para birimi başına ayrı).
+ * BAKİYE artı = firma bize borçlu (alacaklıyız), eksi = biz firmaya borçluyuz.
+ * Uygulama içinde eksi tutar "firma bize borçlandı" demektir; o yüzden ALACAK sütununa yazılır.
+ */
+export function firmLedger(name) {
+  const rows = S.cari.filter((c) => c.counter === name);
+  return CURS.filter((k) => rows.some((r) => round2(r.amt[k] || 0) !== 0)).map((cur) => {
+    let bal = 0, tb = 0, ta = 0;
+    const out = rows.filter((r) => round2(r.amt[cur] || 0) !== 0).map((r) => {
+      const v = r.amt[cur];
+      const borc = v > 0 ? v : 0, alacak = v < 0 ? -v : 0;
+      tb += borc; ta += alacak;
+      bal = round2(bal + alacak - borc);
+      return { r, borc, alacak, bal };
+    });
+    return { cur, rows: out, borc: round2(tb), alacak: round2(ta), bal };
+  });
+}
+
+/** Vadeli satırları ödendi olarak işaretle (ödeme / tahsilat girildiğinde). */
+export function markCariPaid(ids, date) {
+  for (const c of S.cari) if (ids.includes(c.id)) { c.status = 'ÖDENDİ'; c.paidOn = date; }
+  commit('cari');
+}
+
+/** Satır açık mı (vadesi takip edilecek mi)? */
+export const cariOpen = (c) => !!c.due && c.status !== 'ÖDENDİ' && c.status !== 'MAHSUP';
+
+/** Vadesi verilen gün içinde gelen ya da geçmiş, ödenmemiş cari satırları. */
+export function cariDue(withinDays, today = todayStr()) {
+  const lim = addDays(today, withinDays);
+  return S.cari.filter((c) => cariOpen(c) && c.due <= lim).sort((a, b) => a.due.localeCompare(b.due));
 }
 export function cariBalances() {
   const m = new Map();
@@ -287,6 +358,10 @@ export function cariBalances() {
 export function saveCari(entry, { linkAccount } = {}) {
   const row = cleanRow(entry);
   row.link = entry.link || null;
+  row.fis = upper(entry.fis);
+  row.due = entry.due || '';
+  row.status = ROW_STATUS.includes(entry.status) ? entry.status : '';
+  row.paidOn = row.status === 'ÖDENDİ' ? entry.paidOn || '' : '';
   // İstenirse aynı hareketi ana kasaya da işle (ör. kasadan borç verildi).
   if (linkAccount) {
     const main = cleanRow({ ...row, id: row.link || undefined, group: null, account: linkAccount, type: T.CARI });
@@ -359,6 +434,8 @@ export function renameItem(kind, oldName, newName) {
     S.types = exists ? S.types.filter((t) => t.name !== oldName) : S.types.map((t) => (t.name === oldName ? { ...t, name: n } : t));
   } else if (kind === 'counter') {
     S.counters = [...new Set(S.counters.map((c) => (c === oldName ? n : c)))];
+    if (!S.firms.some((x) => x.name === n)) S.firms.forEach((x) => { if (x.name === oldName) x.name = n; });
+    else S.firms = S.firms.filter((x) => x.name !== oldName);
   } else {
     const exists = S.accounts.some((a) => a.name === n);
     if (exists) {

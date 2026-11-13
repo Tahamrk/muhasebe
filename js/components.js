@@ -133,9 +133,9 @@ export function Picker({ label, value, onChange, items, top = 10, allowNew = tru
   </div>`;
 }
 
-export function Sheet({ title, children, footer, onClose = closeSheet }) {
+export function Sheet({ title, children, footer, onClose = closeSheet, wide = false }) {
   return html`<div class="sheet-wrap" onClick=${(e) => e.target === e.currentTarget && onClose()}>
-    <section class="sheet" role="dialog" aria-label=${title}>
+    <section class=${'sheet' + (wide ? ' wide' : '')} role="dialog" aria-label=${title}>
       <header class="sheet-head">
         <button class="icon-btn" onClick=${onClose} aria-label="Kapat"><${Icon} name="left" /></button>
         <h2>${title}</h2>

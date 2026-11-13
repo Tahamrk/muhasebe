@@ -317,6 +317,27 @@ details summary { cursor: pointer; font-weight: 600; color: var(--primary); min-
 .person-bal { display: flex; flex-direction: column; gap: .15rem; }
 .person-bal b, .person-sum b { white-space: nowrap; }
 .person-sum { display: flex; flex-direction: column; gap: .25rem; font-size: 1.1rem; }
+.sheet.wide { width: min(1180px, 100%); }
+.nowrap { white-space: nowrap; }
+.b { font-weight: 700; }
+.kind-tag.ok { background: var(--blue-soft); color: var(--blue); }
+.due-badge.sm { min-width: 0; font-size: .7rem; padding: .1rem .4rem; vertical-align: middle; }
+.firm-head { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1rem; }
+.firm-bals { display: flex; flex-wrap: wrap; gap: .5rem 2.5rem; }
+.firm-status { font-size: .9rem; }
+.ledger-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 1rem; }
+.ledger { width: 100%; border-collapse: collapse; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.ledger th { background: var(--primary); color: #fff; font-size: .75rem; font-weight: 700; text-align: left; padding: .55rem .5rem; white-space: nowrap; position: sticky; top: 0; }
+.ledger td { padding: .6rem .5rem; border-top: 1px solid var(--line); vertical-align: middle; }
+.ledger td.wide, .ledger th.wide { min-width: 220px; }
+.ledger .num { text-align: right; white-space: nowrap; }
+.ledger tbody tr { cursor: pointer; }
+.ledger tbody tr:nth-child(even) { background: var(--surface-2); }
+.ledger tbody tr:active { background: var(--blue-soft); }
+.ledger tfoot td { font-weight: 800; border-top: 2px solid var(--primary); background: var(--surface); }
+.ledger .due-badge { min-width: 0; }
+.ledger.firms td { padding: .75rem .6rem; }
+.ledger.firms td.wide { min-width: 180px; }
 
 /* ---------- Borç / Alacak ---------- */
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -374,4 +395,7 @@ details summary { cursor: pointer; font-weight: 600; color: var(--primary); min-
   .kpis.three { grid-template-columns: 1fr 1fr; }
   .due-badge { min-width: 76px; }
   .pay-row { flex-wrap: wrap; }
+  .sheet-foot { flex-wrap: wrap; }
+  .sheet-foot .grow { display: none; }
+  .sheet-foot .btn { flex: 1 1 auto; }
 }
