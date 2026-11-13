@@ -118,13 +118,14 @@ export function Cari() {
     </div>
     ${!list.length && html`<${Empty} icon="users" title="Cari hesap yok"
       text="Birine borç verdiğinizde ya da birinden borç aldığınızda 'Yeni hareket' ile kaydedin. Kişi bazında kimin ne kadar borçlu olduğunu buradan takip edersiniz." />`}
+    ${openList.length > 0 && html`<h3 class="sec-title">Açık hesaplar (${openList.length})</h3>`}
     <div class="person-grid">
       ${openList.map((p) => html`<button class="acc-card" onClick=${() => openSheet(() => html`<${PersonSheet} name=${p.name} />`)}>
         <span class="acc-head"><${Icon} name="users" size=${20} /><b>${p.name}</b></span>
         <span class="person-bal">${balanceText(p.b)}</span>
       </button>`)}
     </div>
-    ${closed.length > 0 && html`<button class="btn mt16" onClick=${() => setShowClosed(!showClosed)}>
+    ${closed.length > 0 && html`<button class="btn mt24" onClick=${() => setShowClosed(!showClosed)}>
       Kapanmış hesaplar (${closed.length}) <${Icon} name=${showClosed ? 'x' : 'down'} /></button>`}
     ${showClosed && html`<div class="person-grid mt8">${closed.map((p) => html`<button class="acc-card" onClick=${() => openSheet(() => html`<${PersonSheet} name=${p.name} />`)}>
       <span class="acc-head"><b>${p.name}</b></span><span class="muted">Hesap kapalı</span></button>`)}</div>`}

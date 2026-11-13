@@ -12,7 +12,7 @@ import { exportExcel, parseExcel, applyImport } from '../excel.js';
 import { refreshRates, setManualRates } from '../rates.js';
 import { openPinSetup } from './lock.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 
 /* ------------------------------ Yedekleme ------------------------------ */
 

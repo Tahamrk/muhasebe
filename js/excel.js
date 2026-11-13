@@ -26,6 +26,17 @@ const CUR_COLS = [
   ['XAU', 'ALTIN (GR)', ' (GR)'],
 ];
 const KIND_LABEL = ACCOUNT_KINDS;
+
+/*
+ * Cari sayfasında babamın kullanımı: BORÇ = biz o kişiye borçluyuz, ALACAK = o kişi bize borçlu.
+ * Uygulama içinde ise eksi tutar = "o kişi bize borçlu" demektir. Bu yüzden cari sayfası
+ * okunurken ve yazılırken tutarların işareti ters çevrilir.
+ */
+const flipAmt = (row) => {
+  const amt = emptyAmt();
+  for (const c of CURS) amt[c] = -(row.amt?.[c] || 0) || 0;
+  return { ...row, amt };
+};
 const KIND_FROM_LABEL = Object.fromEntries(Object.entries(ACCOUNT_KINDS).map(([k, v]) => [upper(v), k]));
 
 /* ============================ DIŞA AKTARMA ============================ */
@@ -164,7 +175,7 @@ export async function buildWorkbook({ year } = {}) {
   }
 
   writeLedger(wb.addWorksheet('GENEL İCMAL'), title, rows);
-  writeLedger(wb.addWorksheet('CARİ BORÇ ALACAK'), 'CARİ BORÇ ALACAK', S.cari);
+  writeLedger(wb.addWorksheet('CARİ BORÇ ALACAK'), 'CARİ BORÇ ALACAK', S.cari.map(flipAmt));
 
   writeSimple(wb.addWorksheet('YAKLAŞAN ÖDEMELER'),
     ['ÖDEME ADI', 'MİKTAR', 'PARA BİRİMİ', 'SON ÖDEME TARİHİ', 'TEKRAR', 'DURUM', 'BAĞLI HESAP', 'NOT'],
@@ -189,7 +200,7 @@ export async function buildWorkbook({ year } = {}) {
     const st = wb.addWorksheet('AYARLAR', { state: 'hidden' });
     const { displayCur, bigText, autoRates, rates, lockMinutes } = S.settings;
     st.getCell('A1').value = MARKER;
-    st.getCell('A2').value = 1;
+    st.getCell('A2').value = 2; // 2: cari sayfası BORÇ = biz borçluyuz
     st.getCell('A3').value = new Date().toISOString();
     st.getCell('A4').value = JSON.stringify({ displayCur, bigText, autoRates, rates, lockMinutes });
   }
@@ -474,7 +485,7 @@ export async function parseExcel(arrayBuffer) {
       types: [...types.values()],
       counters: [...counters],
       payments: payments || [],
-      cari: (cari || []).map((c) => ({ ...c, link: null })),
+      cari: (cari || []).map((c) => ({ ...flipAmt(c), link: null })),
     },
     settings,
     stats: {

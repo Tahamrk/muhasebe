@@ -307,7 +307,12 @@ html.big .chip { min-height: 50px; }
 details summary { cursor: pointer; font-weight: 600; color: var(--primary); min-height: 40px; display: flex; align-items: center; }
 
 /* ---------- Cari ---------- */
+.mt24 { margin-top: 1.5rem; }
+.kpis + .person-grid, .kpis + .empty { margin-top: 1.25rem; }
+.kpis.two .kpi { justify-content: flex-start; }
+.person-grid { margin-bottom: 1rem; }
 .person-bal { display: flex; flex-direction: column; gap: .15rem; }
+.person-bal b, .person-sum b { white-space: nowrap; }
 .person-sum { display: flex; flex-direction: column; gap: .25rem; font-size: 1.1rem; }
 
 /* ---------- Raporlar ---------- */
