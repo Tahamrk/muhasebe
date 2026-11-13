@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS = {
   lockMinutes: 5,
 };
 
-const KEYS = ['tx', 'accounts', 'types', 'counters', 'payments', 'cari', 'settings'];
+const KEYS = ['tx', 'accounts', 'types', 'counters', 'payments', 'cari', 'debts', 'settings'];
 
 export const S = {
   tx: [],        // ana kasa kayıtları
@@ -46,6 +46,7 @@ export const S = {
   counters: [],  // karşı hesaplar
   payments: [],  // yaklaşan ödemeler
   cari: [],      // cari borç/alacak hareketleri
+  debts: [],     // taksitli borç / alacak dosyaları
   settings: { ...DEFAULT_SETTINGS },
   ready: false,
   version: 0,
@@ -111,7 +112,7 @@ export async function load() {
 
 /** Tüm veri koleksiyonlarını değiştir (içe aktarma / sıfırlama). */
 export function replaceAll(data) {
-  for (const k of ['tx', 'accounts', 'types', 'counters', 'payments', 'cari']) {
+  for (const k of ['tx', 'accounts', 'types', 'counters', 'payments', 'cari', 'debts']) {
     if (data[k]) S[k] = data[k];
   }
   if (data.settings) S.settings = { ...S.settings, ...data.settings };

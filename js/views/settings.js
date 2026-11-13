@@ -12,7 +12,7 @@ import { exportExcel, parseExcel, applyImport } from '../excel.js';
 import { refreshRates, setManualRates } from '../rates.js';
 import { openPinSetup } from './lock.js';
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.1.0';
 
 /* ------------------------------ Yedekleme ------------------------------ */
 
@@ -55,21 +55,66 @@ function BackupSheet() {
 }
 export const openBackup = () => openSheet(() => html`<${BackupSheet} />`);
 
+/** Tablette şu an kayıtlı bilgilerin kısa özeti (uyarılarda gösterilir). */
+function currentDataSummary() {
+  const parts = [];
+  if (S.tx.length) parts.push(`${S.tx.length} kasa kaydı`);
+  if (S.debts.length) parts.push(`${S.debts.length} borç/alacak`);
+  if (S.cari.length) parts.push(`${S.cari.length} cari hareket`);
+  if (S.payments.length) parts.push(`${S.payments.length} yaklaşan ödeme`);
+  return parts.join(', ');
+}
+
 function ImportPreview({ parsed, fileName }) {
-  const has = S.tx.length > 0;
-  const [mode, setMode] = useState(has ? 'replace' : 'replace');
+  const has = S.tx.length + S.debts.length + S.cari.length + S.payments.length > 0;
+  const [mode, setMode] = useState('replace');
+  const [busy, setBusy] = useState(false);
   const s = parsed.stats;
+  const last = S.settings.lastBackup;
+  const lastText = last ? `Son yedeğiniz ${fmtDate(last.slice(0, 10))} tarihinde alındı (${daysBetween(last.slice(0, 10), todayStr())} gün önce).` : 'Daha önce HİÇ yedek almadınız!';
+
+  const backupFirst = async () => {
+    setBusy(true);
+    try {
+      const r = await exportExcel({ share: true });
+      if (!r.cancelled) toast(r.shared ? 'Yedek gönderildi' : `${r.name} indirildi`);
+    } catch (e) {
+      toast('Yedek alınamadı: ' + e.message, 'err');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const apply = async () => {
     if (has && mode === 'replace') {
-      const ok = await ask({ title: 'Mevcut veriler silinsin mi?', text: `Tablette şu an ${S.tx.length} kayıt var. Bunların yerine dosyadaki ${s.tx} kayıt gelecek. Emin değilseniz önce yedek alın.`, ok: 'Evet, değiştir', danger: true });
+      const ok = await ask({
+        title: 'Dikkat: mevcut bilgileriniz silinecek!',
+        text: `Tablette şu an ${currentDataSummary()} var. İçe aktarırsanız bunların HEPSİ silinecek ve yerine bu dosyadakiler gelecek. Bu işlem geri alınamaz. ${lastText} Önemli bilgileriniz varsa önce "Vazgeç"e basıp yedek alın. Devam etmek istiyor musunuz?`,
+        ok: 'Evet, sil ve içe aktar', cancel: 'Vazgeç', danger: true,
+      });
+      if (!ok) return;
+    } else if (has) {
+      const ok = await ask({
+        title: 'Kayıtlar mevcut bilgilerin sonuna eklenecek',
+        text: 'Mevcut bilgileriniz silinmez. Aynı dosyayı daha önce eklediyseniz kayıtlar ikişer kez görünür. Devam edilsin mi?',
+        ok: 'Evet, ekle', cancel: 'Vazgeç',
+      });
       if (!ok) return;
     }
-    applyImport(parsed, mode);
+    applyImport(parsed, has ? mode : 'replace');
     toast(`${s.tx} kayıt içe aktarıldı`);
     closeSheet();
   };
   return html`<${Sheet} title="Excel'den içe aktar" footer=${html`<span class="grow"></span>
       <button class="btn primary big" onClick=${apply}><${Icon} name="check" /> İçe aktar</button>`}>
+    ${has && html`<div class="alert err import-warn">
+      <${Icon} name="alert" size=${28} />
+      <div class="grow">
+        <b>Tablette kayıtlı bilgileriniz var: ${currentDataSummary()}.</b>
+        <p>"Mevcut verinin yerine koy" seçerseniz bu bilgilerin hepsi silinir. ${lastText} Önemli bilgileriniz varsa içe aktarmadan önce yedek alın.</p>
+        <button class="btn primary" disabled=${busy} onClick=${backupFirst}><${Icon} name="download" /> ${busy ? 'Hazırlanıyor…' : 'Önce yedek al'}</button>
+      </div>
+    </div>`}
     <p><b>${fileName}</b> ${parsed.isBackup ? html`<span class="tag">Uygulama yedeği</span>` : ''}</p>
     <div class="stat-grid">
       <div><small>Kayıt</small><b>${s.tx}</b></div>
@@ -78,15 +123,18 @@ function ImportPreview({ parsed, fileName }) {
       <div><small>Kart / KMH limiti</small><b>${s.limits}</b></div>
       <div><small>Cari hareket</small><b>${s.cari}</b></div>
       <div><small>Yaklaşan ödeme</small><b>${s.payments}</b></div>
+      ${s.debts > 0 && html`<div><small>Borç / alacak</small><b>${s.debts}</b></div>`}
     </div>
     ${s.skipped > 0 && html`<p class="muted">Tutarı olmayan ${s.skipped} satır atlandı.</p>`}
     ${has && html`<${Field} label="Tablette zaten veri var. Ne yapılsın?">
       <${Seg} value=${mode} onChange=${setMode} cls="seg-lg"
-        options=${[['replace', 'Mevcut verinin yerine koy'], ['append', 'Mevcut verinin sonuna ekle']]} />
+        options=${[['replace', 'Mevcut verinin yerine koy (eskiler silinir)'], ['append', 'Mevcut verinin sonuna ekle (silinmez)']]} />
     </${Field}>`}
     <p class="muted small">Kredi kartı ve KMH limit satırları (K.KARTI / KMH türünde "LİMİTİ" yazan satırlar) kayıt olarak değil, hesabın limiti olarak alınır. Hesap türlerini sonradan Ayarlar > Hesaplar'dan düzeltebilirsiniz.</p>
   </${Sheet}>`;
 }
+
+export const openImportPreview = (parsed, fileName) => openSheet(() => html`<${ImportPreview} parsed=${parsed} fileName=${fileName} />`);
 
 async function pickAndImport() {
   const input = document.createElement('input');
@@ -98,7 +146,7 @@ async function pickAndImport() {
     toast('Dosya okunuyor…');
     try {
       const parsed = await parseExcel(await file.arrayBuffer());
-      openSheet(() => html`<${ImportPreview} parsed=${parsed} fileName=${file.name} />`);
+      openImportPreview(parsed, file.name);
     } catch (e) {
       console.error(e);
       toast('Dosya okunamadı: ' + e.message, 'err');
@@ -257,7 +305,7 @@ export function Settings() {
     const v = await ask({ title: 'Tüm veriler silinsin mi?', text: 'Bu işlem geri alınamaz. Devam etmek için kutuya SİL yazın.', input: '', ok: 'Tümünü sil', danger: true });
     if (v === false) return;
     if (upper(v) !== 'SİL') return toast('SİL yazılmadığı için silinmedi', 'err');
-    replaceAll({ tx: [], cari: [], payments: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS] });
+    replaceAll({ tx: [], cari: [], payments: [], debts: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS] });
     toast('Tüm veriler silindi');
   };
 

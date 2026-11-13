@@ -39,6 +39,7 @@ const ICONS = {
   filter: '<path d="M3 5h18l-7 9v5l-4 2v-7z"/>',
   text: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
 };
 
 export function Icon({ name, size = 22, cls = '' }) {

@@ -10,6 +10,8 @@ import { Home } from './views/home.js';
 import { Entries } from './views/entries.js';
 import { Payments } from './views/payments.js';
 import { Cari } from './views/cari.js';
+import { Debts } from './views/debts.js';
+import { upcomingInstallments } from './debts.js';
 import { Reports } from './views/reports.js';
 import { Settings } from './views/settings.js';
 import { LockScreen } from './views/lock.js';
@@ -18,6 +20,7 @@ const NAV = [
   ['anasayfa', 'Ana Sayfa', 'home', Home],
   ['kayitlar', 'Kayıtlar', 'list', Entries],
   ['odemeler', 'Ödemeler', 'calendar', Payments],
+  ['borclar', 'Borç / Alacak', 'file', Debts],
   ['cari', 'Cari', 'users', Cari],
   ['raporlar', 'Raporlar', 'chart', Reports],
   ['ayarlar', 'Ayarlar', 'settings', Settings],
@@ -111,13 +114,15 @@ function App() {
 
   const today = todayStr();
   const dueSoon = S.payments.filter((p) => !p.paid && p.due && daysBetween(today, p.due) <= 3).length;
+  const debtSoon = upcomingInstallments(3).length;
+  const badges = { odemeler: dueSoon, borclar: debtSoon };
   const current = NAV.find((n) => n[0] === route) || NAV[0];
   const Page = current[3];
   const nav = (cls) => html`<nav class=${cls}>
     ${cls === 'side' && html`<div class="brand"><span class="brand-logo">₺</span><span>Kişisel<br/>Muhasebe</span></div>`}
     ${NAV.map(([r, label, icon]) => html`<a href=${'#/' + r} class=${r === route ? 'on' : ''}>
       <span class="nav-ico"><${Icon} name=${icon} size=${cls === 'side' ? 22 : 24} />
-        ${r === 'odemeler' && dueSoon > 0 && html`<span class="badge">${dueSoon}</span>`}</span>
+        ${badges[r] > 0 && html`<span class="badge">${badges[r]}</span>`}</span>
       <span>${label}</span></a>`)}
   </nav>`;
 

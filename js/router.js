@@ -1,7 +1,7 @@
 // Basit adres (hash) yönlendirmesi: #/kayitlar?account=KASA
 import { useState, useEffect } from '../vendor/preact-htm.js';
 
-export const ROUTES = ['anasayfa', 'kayitlar', 'odemeler', 'cari', 'raporlar', 'ayarlar'];
+export const ROUTES = ['anasayfa', 'kayitlar', 'odemeler', 'borclar', 'cari', 'raporlar', 'ayarlar'];
 
 export function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');

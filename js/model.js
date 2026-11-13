@@ -262,9 +262,10 @@ function insertSorted(rows, hint = -1) {
 export function deleteTx(t) {
   const ids = new Set(groupRows(t).map((x) => x.id));
   S.tx = S.tx.filter((x) => !ids.has(x.id));
-  // Bu kayda bağlı cari hareketinin bağını kopar.
+  // Bu kayda bağlı cari hareketinin ve borç ödemesinin bağını kopar.
   S.cari.forEach((c) => { if (c.link && ids.has(c.link)) c.link = null; });
-  commit('tx', 'cari');
+  S.debts.forEach((d) => d.payments.forEach((p) => { if (p.txId && ids.has(p.txId)) { p.txId = null; p.account = ''; } }));
+  commit('tx', 'cari', 'debts');
 }
 
 /* ---------------- Cari ---------------- */
@@ -337,7 +338,9 @@ const FIELD_OF = { type: 'type', counter: 'counter', account: 'account' };
 
 export function usageCount(kind, name) {
   const f = FIELD_OF[kind];
-  return S.tx.filter((t) => t[f] === name).length + S.cari.filter((t) => t[f] === name).length;
+  const inDebts = S.debts.filter((d) => (kind === 'counter' && d.person === name) || (kind === 'type' && d.type === name)
+    || (kind === 'account' && d.payments.some((p) => p.account === name))).length;
+  return S.tx.filter((t) => t[f] === name).length + S.cari.filter((t) => t[f] === name).length + inDebts;
 }
 
 /** Adı değiştirir; yeni ad zaten varsa ikisini birleştirir. */
@@ -346,6 +349,11 @@ export function renameItem(kind, oldName, newName) {
   if (!n || n === oldName) return;
   const f = FIELD_OF[kind];
   for (const list of [S.tx, S.cari]) for (const t of list) if (t[f] === oldName) t[f] = n;
+  for (const d of S.debts) {
+    if (kind === 'counter' && d.person === oldName) d.person = n;
+    if (kind === 'type' && d.type === oldName) d.type = n;
+    if (kind === 'account') d.payments.forEach((p) => { if (p.account === oldName) p.account = n; });
+  }
   if (kind === 'type') {
     const exists = S.types.some((t) => t.name === n);
     S.types = exists ? S.types.filter((t) => t.name !== oldName) : S.types.map((t) => (t.name === oldName ? { ...t, name: n } : t));

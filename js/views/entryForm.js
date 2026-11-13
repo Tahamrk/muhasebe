@@ -8,6 +8,8 @@ import {
 } from '../model.js';
 import { Sheet, Seg, Field, AmountField, CurSeg, Picker, Icon, Money } from '../components.js';
 import { openSheet, closeSheet, toast, ask } from '../ui.js';
+import { paymentForTx } from '../debts.js';
+import { openPay } from './debts.js';
 
 const MODES = [
   ['gider', 'Gider', 'out'],
@@ -20,6 +22,9 @@ const TITLES = { gider: 'Gider', gelir: 'Gelir', transfer: 'Hesaplar Arası Tran
 
 /** Formu açar. tx: düzenlenecek kayıt, preset: başlangıç değerleri */
 export function openEntry({ mode = 'gider', tx = null, preset = {} } = {}) {
+  // Borç/alacak ödemesine bağlı kayıtlar kendi formunda düzenlenir (iki taraf senkron kalsın).
+  const link = tx && paymentForTx(tx.id);
+  if (link) return openPay(link.d.id, link.p.id);
   openSheet(() => html`<${EntryForm} initMode=${tx ? txMode(tx) : mode} tx=${tx} preset=${preset} />`);
 }
 

@@ -1,6 +1,6 @@
 // Uygulamayı internetsiz çalıştırmak için dosyaları önbelleğe alır.
 // Yeni sürüm yayınlarken VERSION değerini artırın.
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.1.0';
 const CACHE = 'muhasebe-' + VERSION;
 const FILES = [
   './',
@@ -13,6 +13,8 @@ const FILES = [
   'js/model.js',
   'js/excel.js',
   'js/rates.js',
+  'js/debts.js',
+  'js/views/debts.js',
   'js/ui.js',
   'js/router.js',
   'js/components.js',

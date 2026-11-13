@@ -10,6 +10,8 @@ import { refreshRates } from '../rates.js';
 import { toast } from '../ui.js';
 import { openBackup } from './settings.js';
 import { go } from '../router.js';
+import { upcomingInstallments } from '../debts.js';
+import { openDebt } from './debts.js';
 
 export function DisplayMoney({ tl, cls = '', color = true, sign = false }) {
   const cur = S.settings.displayCur;
@@ -60,8 +62,16 @@ export function Home() {
   const sum = useMemo(() => accountSummary(), [S.version]);
   const month = useMemo(() => sumFlow(flowRows(periodRange('thisMonth'))), [S.version]);
   const today = todayStr();
-  const payments = S.payments.filter((p) => !p.paid && p.due && daysBetween(today, p.due) <= 10)
-    .sort((a, b) => a.due.localeCompare(b.due));
+  // Yaklaşan ödemeler + borç/alacak taksitleri tek listede
+  const payments = [
+    ...S.payments.filter((p) => !p.paid && p.due && daysBetween(today, p.due) <= 10)
+      .map((p) => ({ key: p.id, name: p.name, sub: fmtDate(p.due), due: p.due, amount: p.amount, cur: p.cur, open: () => go('odemeler') })),
+    ...upcomingInstallments(10).map(({ d, r }) => ({
+      key: d.id + r.id, name: d.person, due: r.due, amount: r.rest, cur: d.cur, kind: d.kind,
+      sub: `${fmtDate(r.due)} · ${d.title} · ${r.no}. taksit · ${d.kind === 'borc' ? 'Ödenecek' : 'Tahsil edilecek'}`,
+      open: () => openDebt(d.id),
+    })),
+  ].sort((a, b) => a.due.localeCompare(b.due));
   const lastBackupDays = S.settings.lastBackup ? daysBetween(S.settings.lastBackup.slice(0, 10), today) : null;
   const needBackup = S.tx.length > 0 && (lastBackupDays === null || lastBackupDays >= 30);
   const saveErr = getSaveError();
@@ -118,13 +128,14 @@ export function Home() {
     </div>
 
     ${payments.length > 0 && html`<section>
-      <h3 class="sec-title"><${Icon} name="bell" /> Yaklaşan ödemeler <button class="link" onClick=${() => go('odemeler')}>Tümü</button></h3>
+      <h3 class="sec-title"><${Icon} name="bell" /> Yaklaşan ödeme ve tahsilatlar (10 gün)
+        <button class="link" onClick=${() => go('odemeler')}>Ödemeler</button><button class="link" style="margin-left:0" onClick=${() => go('borclar')}>Borç / Alacak</button></h3>
       <div class="card list">${payments.map((p) => {
         const d = daysBetween(today, p.due);
-        return html`<button class="pay-row" onClick=${() => go('odemeler')}>
+        return html`<button class="pay-row" key=${p.key} onClick=${p.open}>
           <span class=${'due-badge ' + (d < 0 ? 'late' : d <= 3 ? 'soon' : '')}>${d < 0 ? `${-d} gün gecikti` : d === 0 ? 'Bugün' : `${d} gün`}</span>
-          <span class="grow"><b>${p.name}</b><small>${fmtDate(p.due)}</small></span>
-          <b>${money(p.amount, p.cur)}</b>
+          <span class="grow"><b>${p.name}</b><small>${p.sub}</small></span>
+          <b class=${p.kind === 'alacak' ? 'pos' : ''}>${p.kind === 'alacak' ? '+' : ''}${money(p.amount, p.cur)}</b>
         </button>`;
       })}</div>
     </section>`}

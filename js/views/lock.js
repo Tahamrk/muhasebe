@@ -49,7 +49,7 @@ export function LockScreen({ onUnlock }) {
     });
     if (v === false) return;
     if (v.toLocaleUpperCase('tr-TR') !== 'SIFIRLA') return toast('SIFIRLA yazılmadığı için iptal edildi', 'err');
-    replaceAll({ tx: [], cari: [], payments: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS], settings: { pinHash: null, lastBackup: null } });
+    replaceAll({ tx: [], cari: [], payments: [], debts: [], accounts: [{ name: 'KASA', kind: 'kasa', limit: 0, archived: false }], types: DEFAULT_TYPES.map((t) => ({ ...t })), counters: [...DEFAULT_COUNTERS], settings: { pinHash: null, lastBackup: null } });
     onUnlock();
   };
   return html`<div class="lock">

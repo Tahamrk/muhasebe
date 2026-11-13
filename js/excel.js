@@ -5,6 +5,7 @@ import {
   T, DEFAULT_TYPES, DEFAULT_COUNTERS, NON_REPORT_NAMES, ACCOUNT_KINDS,
   emptyAmt, addAmt, roundAmt, amtCurs, balances, guessKind,
 } from './model.js';
+import { debtStatus } from './debts.js';
 
 let excelP;
 function loadExcelJS() {
@@ -79,6 +80,9 @@ function writeLedger(ws, title, rows) {
     c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   });
   hr.height = 30;
+  // Gizli sütun: geri yüklemede kayıtların kimliği korunur (borç ödemeleri ile bağ kopmaz).
+  hr.getCell(lastCol + 1).value = 'KAYIT NO';
+  ws.getColumn(lastCol + 1).hidden = true;
 
   const first = 4;
   const last = Math.max(first, first + rows.length - 1);
@@ -94,6 +98,7 @@ function writeLedger(ws, title, rows) {
     row.getCell(3).value = t.counter || null;
     row.getCell(4).value = t.account || null;
     row.getCell(5).value = t.desc || null;
+    if (t.id) row.getCell(lastCol + 1).value = t.id;
     CUR_COLS.forEach(([cur], k) => {
       const cb = 6 + k * 3;
       const v = round2(t.amt[cur] || 0);
@@ -181,6 +186,27 @@ export async function buildWorkbook({ year } = {}) {
     ['ÖDEME ADI', 'MİKTAR', 'PARA BİRİMİ', 'SON ÖDEME TARİHİ', 'TEKRAR', 'DURUM', 'BAĞLI HESAP', 'NOT'],
     S.payments.map((p) => [p.name, p.amount, p.cur, p.due ? { date: p.due } : null, p.repeat === 'monthly' ? 'HER AY' : 'TEK SEFER', p.paid ? 'ÖDENDİ' : 'BEKLİYOR', p.account || null, p.note || null]),
     [24, 14, 12, 18, 12, 12, 18, 30]);
+
+  // Borç / alacak takibi: özet + taksitler (okunabilir), _PLANLAR (birebir geri yükleme için)
+  const debts = S.debts.map((d) => ({ d, st: debtStatus(d) }));
+  writeSimple(wb.addWorksheet('BORÇ ALACAK TAKİBİ'),
+    ['TÜR', 'KİŞİ / FİRMA', 'KONU', 'TARİH', 'PARA BİRİMİ', 'TOPLAM', 'ÖDENEN / TAHSİL EDİLEN', 'KALAN', 'SIRADAKİ VADE', 'SIRADAKİ TUTAR', 'DURUM', 'NOT'],
+    debts.map(({ d, st }) => [d.kind === 'borc' ? 'BORÇ' : 'ALACAK', d.person, d.title, { date: d.date }, d.cur, d.total, st.paid, st.remaining,
+      st.next?.due ? { date: st.next.due } : null, st.next ? st.next.rest : null, st.closed ? 'KAPANDI' : st.lateCount ? 'GECİKMEDE' : 'AÇIK', d.note || null]),
+    [10, 22, 26, 12, 10, 16, 18, 16, 14, 16, 12, 30]);
+  const inst = [];
+  for (const { d, st } of debts) for (const r of st.rows) {
+    inst.push([d.kind === 'borc' ? 'BORÇ' : 'ALACAK', d.person, d.title, r.no, r.label || null, r.due ? { date: r.due } : null, d.cur, r.amount, r.paid, r.rest,
+      r.status === 'paid' ? 'ÖDENDİ' : r.status === 'late' ? 'GECİKTİ' : r.status === 'partial' ? 'KISMEN' : 'BEKLİYOR']);
+  }
+  writeSimple(wb.addWorksheet('TAKSİTLER'),
+    ['TÜR', 'KİŞİ / FİRMA', 'KONU', 'TAKSİT NO', 'ETİKET', 'VADE', 'PARA BİRİMİ', 'TUTAR', 'ÖDENEN', 'KALAN', 'DURUM'],
+    inst, [10, 22, 26, 10, 12, 12, 10, 16, 16, 16, 12]);
+  if (!year) {
+    const pw = wb.addWorksheet('_PLANLAR', { state: 'hidden' });
+    pw.getCell('A1').value = 'PLAN (JSON)';
+    S.debts.forEach((d, i) => (pw.getCell(i + 2, 1).value = JSON.stringify(d)));
+  }
 
   const bal = balances();
   writeSimple(wb.addWorksheet('HESAPLAR'),
@@ -292,7 +318,8 @@ function findLedgerHeader(ws) {
     for (let c = 1; c <= Math.min(row.cellCount || 30, 40); c++) {
       const h = norm(cellVal(row.getCell(c)) ?? '');
       if (!h) continue;
-      if (h === 'TARIH' || h === 'TARİH') cols.date = c;
+      if (h === 'KAYITNO') cols.id = c;
+      else if (h === 'TARIH' || h === 'TARİH') cols.date = c;
       else if (h.includes('TÜR')) cols.type = c;
       else if (h.includes('KARŞI')) cols.counter = c;
       else if (h.includes('SORUMLULUK') || h === 'HESAP') cols.account = c;
@@ -328,7 +355,8 @@ function readLedger(ws) {
     const date = toDateStr(get('date')) || lastDate;
     if (!date) { skipped++; continue; }
     lastDate = date;
-    out.push({ id: uid(), date, type, counter, account, desc, amt, group: null, created: Date.now() + r });
+    const rid = get('id');
+    out.push({ id: rid ? String(rid) : uid(), date, type, counter, account, desc, amt, group: null, created: Date.now() + r });
   }
   return { rows: out, skipped };
 }
@@ -476,6 +504,20 @@ export async function parseExcel(arrayBuffer) {
     try { settings = JSON.parse(cellVal(settingsWs.getCell('A4')) || '{}'); } catch { settings = null; }
   }
 
+  // Borç / alacak planları (sadece uygulama yedeğinde bulunur)
+  const debts = [];
+  const planWs = wb.worksheets.find((w) => w.name === '_PLANLAR');
+  if (planWs) {
+    for (let r = 2; r <= planWs.rowCount; r++) {
+      const v = cellVal(planWs.getCell(r, 1));
+      if (!v) continue;
+      try {
+        const d = JSON.parse(v);
+        if (d && d.id && Array.isArray(d.schedule) && Array.isArray(d.payments)) debts.push(d);
+      } catch { /* bozuk satır atlanır */ }
+    }
+  }
+
   const dates = tx.map((t) => t.date);
   return {
     isBackup,
@@ -486,6 +528,7 @@ export async function parseExcel(arrayBuffer) {
       counters: [...counters],
       payments: payments || [],
       cari: (cari || []).map((c) => ({ ...flipAmt(c), link: null })),
+      debts,
     },
     settings,
     stats: {
@@ -494,6 +537,7 @@ export async function parseExcel(arrayBuffer) {
       limits: limits.size,
       cari: (cari || []).length,
       payments: (payments || []).length,
+      debts: debts.length,
       skipped,
       from: dates[0],
       to: dates[dates.length - 1],
@@ -511,7 +555,17 @@ export function applyImport(parsed, mode) {
     S.counters = d.counters;
     S.payments = d.payments;
     S.cari = d.cari;
+    S.debts = d.debts || [];
   } else {
+    // Sonuna eklerken kimlik çakışması olmasın: yeni kimlik ver, borç ödemelerindeki bağları da güncelle.
+    const idMap = new Map();
+    for (const t of d.tx) { const n = uid() + Math.random().toString(36).slice(2, 5); idMap.set(t.id, n); t.id = n; }
+    for (const debt of d.debts || []) {
+      debt.id = uid() + Math.random().toString(36).slice(2, 5);
+      debt.payments.forEach((p) => { p.id = uid() + Math.random().toString(36).slice(2, 5); p.txId = p.txId ? idMap.get(p.txId) || null : null; });
+      debt.schedule.forEach((s) => (s.id = uid() + Math.random().toString(36).slice(2, 5)));
+    }
+    S.debts = [...S.debts, ...(d.debts || [])];
     S.tx = [...S.tx, ...d.tx].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
     for (const a of d.accounts) {
       const ex = S.accounts.find((x) => x.name === a.name);
